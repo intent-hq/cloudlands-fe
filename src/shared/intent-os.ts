@@ -46,14 +46,3 @@ export function intentOsRendererArguments(env: Env = process.env): string[] {
     ...(intentOsSwitchOn('INTENT_IN_APP_PICKER', env) ? [IN_APP_PICKER_RENDERER_ARG] : []),
   ];
 }
-
-/** A preference default: the saved value when it is a boolean, else the Intent OS default. */
-export function intentOsBooleanDefault(
-  saved: unknown,
-  normalDefault: boolean,
-  intentOsDefault: boolean,
-  env: Env = process.env,
-): boolean {
-  if (typeof saved === 'boolean') return saved;
-  return isIntentOs(env) ? intentOsDefault : normalDefault;
-}

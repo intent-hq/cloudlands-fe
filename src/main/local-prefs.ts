@@ -28,11 +28,15 @@ import { app } from 'electron';
 import { Logger } from '../shared/logger';
 import {
   RETIRED_LOCAL_PREF_KEYS,
+  type BooleanLocalPrefKey,
   type LocalPrefKey,
   type RetiredLocalPrefKey,
 } from './local-pref-keys';
 
-export type { LocalPrefKey } from './local-pref-keys';
+export type { BooleanLocalPrefKey, LocalPrefKey } from './local-pref-keys';
+
+/** Keys the generic readers accept; boolean settings go through `getBooleanLocalPref`. */
+type ValueLocalPrefKey = Exclude<LocalPrefKey, BooleanLocalPrefKey>;
 
 const logger = new Logger('LocalPrefs');
 
@@ -92,13 +96,13 @@ async function writeAll(next: LocalPrefsDocument): Promise<void> {
 }
 
 /** Read a single FE-local preference; `undefined` when absent. */
-export async function getLocalPref<T = unknown>(key: LocalPrefKey): Promise<T | undefined> {
+export async function getLocalPref<T = unknown>(key: ValueLocalPrefKey): Promise<T | undefined> {
   const all = await readAll();
   return all[key] as T | undefined;
 }
 
 /** Return true iff `key` has been persisted (used for the download-attribution "already claimed" marker). */
-export async function hasLocalPref(key: LocalPrefKey): Promise<boolean> {
+export async function hasLocalPref(key: ValueLocalPrefKey): Promise<boolean> {
   const all = await readAll();
   return Object.prototype.hasOwnProperty.call(all, key);
 }
@@ -172,21 +176,37 @@ export async function __drainLocalPrefsWriteChainForTesting(): Promise<void> {
   writeChain = Promise.resolve();
 }
 
-/**
- * The dock is on by default; only an explicit opt-out turns it off. A missing file
- * or key is "never chose" (on). An unreadable or malformed file is an error; the
- * startup caller keeps the dock off when this rejects.
- */
-export async function getDockLabEnabledLocalPref(): Promise<boolean> {
-  return (await getStrictLocalPref('dockLabEnabled')) !== false;
+export interface BooleanLocalPrefPolicy {
+  /** The value when the profile never chose: no file, or no key. */
+  default: boolean;
+  /** The value when the choice cannot be known: an unreadable or malformed file, or a non-boolean value. */
+  onError: boolean;
 }
 
-/**
- * Like `getLocalPref`, but rejects an unreadable or malformed file instead of
- * reading it as unset, so a caller can tell "never chose" from "cannot know".
- */
-export async function getStrictLocalPref(key: LocalPrefKey): Promise<unknown> {
-  return (await readStrictPrefsDocument())[key];
+/** Reads a boolean setting. Never rejects: a read it cannot trust returns `onError`. */
+export async function getBooleanLocalPref(
+  key: BooleanLocalPrefKey,
+  policy: BooleanLocalPrefPolicy,
+): Promise<boolean> {
+  let value: unknown;
+  try {
+    value = (await readStrictPrefsDocument())[key];
+  } catch (error) {
+    logger.warn('Cannot read local-prefs; using the fallback for an unreadable file', {
+      key,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return policy.onError;
+  }
+  if (value === undefined) return policy.default;
+  if (typeof value === 'boolean') return value;
+  logger.warn('local-prefs value is not a boolean; using the fallback', { key });
+  return policy.onError;
+}
+
+/** The dock is on unless the user turned it off; a file that cannot be read keeps it off. */
+export async function getDockLabEnabledLocalPref(): Promise<boolean> {
+  return getBooleanLocalPref('dockLabEnabled', { default: true, onError: false });
 }
 
 export async function setDockLabEnabledLocalPref(enabled: boolean): Promise<void> {
@@ -206,7 +226,7 @@ export async function setDockLabEnabledLocalPref(enabled: boolean): Promise<void
  * changes persist locally and always win.
  */
 export async function getDockEnabledLocalPref(): Promise<boolean> {
-  return (await getLocalPref('dockEnabled')) !== false;
+  return getBooleanLocalPref('dockEnabled', { default: true, onError: false });
 }
 
 export async function setDockEnabledLocalPref(enabled: boolean): Promise<void> {
