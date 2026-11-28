@@ -370,11 +370,7 @@
     <ProfileKindPicker {provider} disabled={busy} {remoteMarks} {differentLogin} onPick={pick} />
   {:else}
     <div class="space-y-5" data-testid="provider-profile-kind-details" data-kind={kind}>
-      <FormField
-        label={m.settings_providerProfiles_name_label()}
-        error={nameError}
-        required
-      >
+      <FormField label={m.settings_providerProfiles_name_label()} error={nameError} required>
         {#snippet control(props)}
           <Input {...props} bind:value={name} autocomplete="off" disabled={fieldsDisabled} />
         {/snippet}

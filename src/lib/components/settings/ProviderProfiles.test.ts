@@ -756,9 +756,6 @@ describe('ProviderProfiles backup and order (§5.54)', () => {
       { target: { value: 'Spare' } },
     );
     await fireEvent.click(
-      within(dialog).getByRole('switch', { name: m.settings_providerProfiles_backup_label() }),
-    );
-    await fireEvent.click(
       within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
     );
     expect(lastOf('providerProfiles/createRequested')?.payload).toMatchObject({
