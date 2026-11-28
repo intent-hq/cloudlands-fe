@@ -4843,17 +4843,16 @@ export async function retryBackendConnection(id: string): Promise<boolean> {
  */
 /**
  * Every saved machine: connection records (self records and nodes included)
- * and guest sessions. Restored frames drop machines that are not listed.
+ * and guest sessions. Restored frames drop machines that are not listed, so
+ * this throws when either store cannot be read in full rather than listing
+ * its machines as forgotten.
  */
 export async function listSavedMachineIds(): Promise<string[]> {
   const [connections, guests] = await Promise.all([
-    connectionsStore.list(),
-    guestSessionsStore.list(),
+    connectionsStore.listIdsStrict(),
+    guestSessionsStore.listIdsStrict(),
   ]);
-  return [
-    ...connections.map((connection) => connection.id),
-    ...guests.map((session) => session.id),
-  ];
+  return [...connections, ...guests];
 }
 
 export async function listMachineRailCandidateIds(): Promise<string[]> {

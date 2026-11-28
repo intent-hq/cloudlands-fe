@@ -630,7 +630,12 @@ function selectMachine(window: BrowserWindowType, id: string): MachineRailState 
   if (rail.selectedId === id || (started && (deps?.isConnected(id) ?? true))) {
     return showMachine(window, id);
   }
-  if (!started) ensureView(window, id);
+  if (!started) {
+    // A machine whose client could not be built when the frame opened gets
+    // another try, so it can come back without being added again.
+    void connectQuietly(id);
+    ensureView(window, id);
+  }
   if (transitionOf(window).pendingId !== id) {
     awaitMachine(window, id);
     if (started) void retryThenShow(window, id);

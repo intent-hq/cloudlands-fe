@@ -214,6 +214,7 @@ const store = vi.hoisted(() => ({
 vi.mock('../desktop-connections-store', () => ({
   LOCAL_CONNECTION_ID: 'local',
   list: store.list,
+  listIdsStrict: async () => ((await store.list()) as Array<{ id: string }>).map((c) => c.id),
   getActiveId: store.getActiveId,
   setActiveId: store.setActiveId,
   add: store.add,
@@ -252,6 +253,8 @@ const guestStore = vi.hoisted(() => ({
 }));
 vi.mock('../guest-sessions-store', () => ({
   list: guestStore.list,
+  listIdsStrict: async () =>
+    ((await guestStore.list()) as Array<{ id: string }>).map((session) => session.id),
   add: guestStore.add,
   findById: guestStore.findById,
   forget: guestStore.forget,

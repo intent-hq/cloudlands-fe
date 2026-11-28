@@ -567,6 +567,30 @@ export function createConnectionsStore(options: {
   }
 
   /**
+   * Ids of every saved connection, local first. Unlike `list()`, a file that
+   * exists but cannot be read, or holds any row that does not validate,
+   * throws: callers that drop unlisted machines must not read it as empty.
+   */
+  async function listIdsStrict(): Promise<string[]> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(filePath(), 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [LOCAL_CONNECTION_ID];
+      throw error;
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('backend-connections has an unknown shape');
+    }
+    const rows = (parsed as Record<string, unknown>).connections ?? [];
+    if (!Array.isArray(rows) || !rows.every(isStoredConnection)) {
+      throw new Error('backend-connections has malformed connections');
+    }
+    return [LOCAL_CONNECTION_ID, ...rows.map((row) => row.id)];
+  }
+
+  /**
    * Find the stored connection matching a pairing identity (deep-link/QR
    * connect flows): the cert fingerprint is canonical — a match means the same
    * machine even under a different host:port — with normalized `host:port` as
@@ -1483,6 +1507,7 @@ export function createConnectionsStore(options: {
   return {
     onConnectionsMutated,
     list,
+    listIdsStrict,
     findMatching,
     add,
     updateMetadata,

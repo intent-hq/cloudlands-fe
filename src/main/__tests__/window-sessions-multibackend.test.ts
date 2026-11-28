@@ -202,7 +202,7 @@ import {
   writeWindowRail,
 } from '../machine-rail-state';
 import { noteFrameFocused, rendererFor, shownMachine } from '../frames';
-import type { FrameMachineSession } from '../../shared/types/machine-rail';
+import { removeRailMachine, type FrameMachineSession } from '../../shared/types/machine-rail';
 
 type FakeWindow = InstanceType<typeof FakeBrowserWindow>;
 
@@ -879,17 +879,13 @@ describe('multi-backend window sessions', () => {
           ],
         }),
       );
-      const connect = vi.fn((id: string) =>
-        id === 'forgotten'
-          ? Promise.reject(new Error('Backend connection not found'))
-          : Promise.resolve({}),
-      );
+      setSavedMachineIds(['remote-2']);
 
-      await restoreAllBackendWindowSessions('local', connect);
+      await restoreAllBackendWindowSessions('local', vi.fn().mockResolvedValue({}));
 
       const live = FakeBrowserWindow.getAllWindows();
       expect(live.map((w) => w.machine)).toEqual(['remote-2']);
-      expect(new URL(live[0].page).pathname).toBe('/workspace/new');
+      expect(openedFrames.get(live[0])?.machines).toEqual([{ id: 'remote-2' }]);
     });
 
     it.each([
@@ -1892,6 +1888,125 @@ describe('multi-backend window sessions', () => {
       expect(new URL(window.page).pathname).toBe('/work/r1');
       // Its own page renders no machine (the rail owner loads the frame page later).
       expect(window.webContents.getURL()).toBe('about:blank');
+    });
+  });
+
+  describe('host membership does not depend on client availability', () => {
+    const bounds = { x: 0, y: 0, width: 1200, height: 800 };
+    const railFrame = {
+      bounds,
+      machines: [
+        { id: 'local', route: '/work/l' },
+        { id: 'remote-1', route: '/work/r1' },
+        { id: 'remote-2', route: '/work/r2' },
+      ],
+      selectedId: 'remote-1',
+    };
+    const failing =
+      (...down: string[]) =>
+      async (id: string) => {
+        if (down.includes(id)) throw new Error('no token');
+        return {};
+      };
+
+    /** Quit and launch again: no windows, nothing in memory, the saved file kept. */
+    function restart(): void {
+      FakeBrowserWindow.instances = [];
+      _resetWindowSessionsCacheForTests();
+      openedFrames.clear();
+    }
+
+    beforeEach(() => setMachineRailEnabledFlag(true));
+
+    it('keeps a host whose client cannot be built in place, showing another host', async () => {
+      writeFrames([railFrame]);
+
+      expect(await restoreAllBackendWindowSessions('local', failing('remote-1'))).toBe(true);
+
+      const [window] = FakeBrowserWindow.getAllWindows() as FakeWindow[];
+      expect(openedFrames.get(window)).toEqual({
+        machines: railFrame.machines,
+        selectedId: 'local',
+      });
+      expect(readWindowRail(window as never).machineIds).toEqual(['local', 'remote-1', 'remote-2']);
+      await saveAllWindowSessions();
+      expect(readFrames()).toEqual([{ ...railFrame, selectedId: 'local' }]);
+    });
+
+    it('keeps the saved frame when none of its hosts can be built, and reopens it whole', async () => {
+      const remotes = {
+        bounds,
+        machines: [
+          { id: 'remote-1', route: '/work/r1' },
+          { id: 'remote-2', route: '/work/r2' },
+        ],
+        selectedId: 'remote-2',
+      };
+      writeFrames([remotes]);
+
+      expect(await restoreAllBackendWindowSessions('local', failing('remote-1', 'remote-2'))).toBe(
+        false,
+      );
+      // Boot falls back to a local frame; saving keeps the unrestored frame as it was.
+      const local = seedLiveWindow('app://workspaces/work/l', bounds, 'local');
+      noteFrameFocused(local as never);
+      await saveAllWindowSessions();
+      expect(readFrames()).toEqual([single('local', '/work/l', bounds), remotes]);
+
+      // Opening one of its hosts later reopens the saved frame, not a join
+      // into the local frame that would leave the other host behind.
+      const add = vi.fn(async () => true);
+      setFrameMachineCommands({ select: () => null, add });
+      await openOrFocusWindowsForBackend('remote-1');
+      setFrameMachineCommands(null);
+
+      expect(add).not.toHaveBeenCalled();
+      await saveAllWindowSessions();
+      expect(readFrames()).toEqual([single('local', '/work/l', bounds), remotes]);
+    });
+
+    it('a client setup failure, more layout saves and a restart keep the host in place', async () => {
+      writeFrames([railFrame]);
+      await restoreAllBackendWindowSessions('local', failing('remote-2'));
+      const [window] = FakeBrowserWindow.getAllWindows() as FakeWindow[];
+      window.bounds = { x: 40, y: 40, width: 1100, height: 700 };
+      await saveAllWindowSessions();
+      captureWindowSessionsSnapshot.call(window as never);
+      await saveAllWindowSessions();
+
+      restart();
+      expect(await restoreAllBackendWindowSessions('local', failing())).toBe(true);
+
+      const [reopened] = FakeBrowserWindow.getAllWindows() as FakeWindow[];
+      expect(openedFrames.get(reopened)?.machines).toEqual(railFrame.machines);
+      expect(reopened.bounds).toEqual({ x: 40, y: 40, width: 1100, height: 700 });
+    });
+
+    it('a host the user removes stays removed after a restart, even when it connects', async () => {
+      writeFrames([railFrame]);
+      await restoreAllBackendWindowSessions('local', failing('remote-2'));
+      const [window] = FakeBrowserWindow.getAllWindows() as FakeWindow[];
+      writeWindowRail(window as never, removeRailMachine(readWindowRail(window as never), 'remote-2'));
+      await saveAllWindowSessions();
+
+      restart();
+      await restoreAllBackendWindowSessions('local', failing());
+
+      const [reopened] = FakeBrowserWindow.getAllWindows() as FakeWindow[];
+      expect(openedFrames.get(reopened)?.machines.map((m) => m.id)).toEqual(['local', 'remote-1']);
+    });
+
+    it('a host the user forgets leaves every saved frame after a restart', async () => {
+      writeFrames([railFrame]);
+      await restoreAllBackendWindowSessions('local', failing('remote-2'));
+      await saveAllWindowSessions();
+
+      restart();
+      setSavedMachineIds(['remote-1']);
+      await restoreAllBackendWindowSessions('local', failing());
+
+      const [reopened] = FakeBrowserWindow.getAllWindows() as FakeWindow[];
+      expect(openedFrames.get(reopened)?.machines.map((m) => m.id)).toEqual(['local', 'remote-1']);
     });
   });
 

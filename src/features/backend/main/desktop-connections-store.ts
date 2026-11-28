@@ -18,6 +18,7 @@ const store = createConnectionsStore({
 export const {
   onConnectionsMutated,
   list,
+  listIdsStrict,
   findMatching,
   add,
   updateMetadata,

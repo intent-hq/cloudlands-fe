@@ -248,21 +248,25 @@ describe('restore ordering and saving', () => {
     ]);
   });
 
-  it('keeps frames not restored this run unless a live frame holds one of their machines', () => {
+  it('keeps frames not restored this run until live frames hold all of their machines', () => {
     const live = [frame(['b', 'local'])];
-    const parked = [frame(['local']), frame(['remote-1']), frame(['remote-2', 'b'])];
-    expect(mergeParkedFrames(live, parked)).toEqual([frame(['b', 'local']), frame(['remote-1'])]);
+    const parked = [frame(['local', 'b']), frame(['remote-1']), frame(['remote-2', 'b'])];
+    expect(mergeParkedFrames(live, parked)).toEqual([
+      frame(['b', 'local']),
+      frame(['remote-1']),
+      frame(['remote-2', 'b']),
+    ]);
   });
 
-  it('keeps the machines that can connect, moving a dropped selection to the first kept one', () => {
-    const canConnect = (id: string) => id !== 'gone';
-    expect(keepFrameMachines(frame(['gone', 'b', 'c'], 'gone'), canConnect)).toEqual(
+  it('keeps the machines still saved, moving a dropped selection to the first kept one', () => {
+    const isSaved = (id: string) => id !== 'gone';
+    expect(keepFrameMachines(frame(['gone', 'b', 'c'], 'gone'), isSaved)).toEqual(
       frame(['b', 'c'], 'b'),
     );
-    expect(keepFrameMachines(frame(['b', 'gone', 'c'], 'c'), canConnect)).toEqual(
+    expect(keepFrameMachines(frame(['b', 'gone', 'c'], 'c'), isSaved)).toEqual(
       frame(['b', 'c'], 'c'),
     );
-    expect(keepFrameMachines(frame(['gone']), canConnect)).toBeNull();
+    expect(keepFrameMachines(frame(['gone']), isSaved)).toBeNull();
   });
 });
 

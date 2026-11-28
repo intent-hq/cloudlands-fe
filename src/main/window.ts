@@ -982,13 +982,15 @@ export async function restoreWindowsForBackend(toBackendId: string): Promise<voi
 
 /**
  * Boot/dock-activate restore of every saved frame. Frames showing the active
- * machine restore first, so the first one becomes the main window. A frame
- * keeps the machines whose pooled client can be built via `connectBackend`
- * (injected — window.ts must not import backend.ipc; idempotent for
- * already-connected machines); a frame with none (forgotten remotes, missing
- * tokens) is skipped and kept saved. An unreachable-but-buildable machine
- * still restores behind the stopped overlay. Returns true when at least one
- * window was restored.
+ * machine restore first, so the first one becomes the main window. Each
+ * machine's pooled client is built via `connectBackend` (injected — window.ts
+ * must not import backend.ipc; idempotent for already-connected machines).
+ * A frame restores with every saved machine in saved order, whatever its
+ * client state: only the user removing a machine or forgetting it takes it
+ * out. A machine whose client cannot be built stays in the rail, greyed out,
+ * and the frame shows its saved machine only when that one can be built,
+ * else the first that can. A frame with no buildable machine is skipped and
+ * kept saved unchanged. Returns true when at least one window was restored.
  */
 export async function restoreAllBackendWindowSessions(
   activeBackendId: string,
@@ -1022,17 +1024,18 @@ export async function restoreAllBackendWindowSessions(
   };
   let restoredAny = false;
   for (const frame of frames) {
-    const usable = new Set<string>();
-    for (const machine of frame.machines) if (await canConnect(machine.id)) usable.add(machine.id);
-    const kept = keepFrameMachines(frame, (id) => usable.has(id));
-    if (!kept) {
+    const usable: string[] = [];
+    for (const machine of frame.machines) if (await canConnect(machine.id)) usable.push(machine.id);
+    if (usable.length === 0) {
       parkedFrames.push(frame);
       if (frame.tabWindow) sessions?.restoreFailed(frame.tabWindow.tabWindowId);
       continue;
     }
-    const window = await createWindowForFrame(kept, !restoredAny && !kept.tabWindow);
+    const selectedId = usable.includes(frame.selectedId) ? frame.selectedId : usable[0];
+    const restore = selectedId === frame.selectedId ? frame : { ...frame, selectedId };
+    const window = await createWindowForFrame(restore, !restoredAny && !restore.tabWindow);
     if (window) restoredAny = true;
-    else if (kept.tabWindow) sessions?.restoreFailed(kept.tabWindow.tabWindowId);
+    else if (restore.tabWindow) sessions?.restoreFailed(restore.tabWindow.tabWindowId);
   }
   if (restoredAny) logger.info('Restored saved frames', { count: frames.length });
   return restoredAny;
@@ -1083,7 +1086,10 @@ export async function openLocalFrameBeforeClosingLast(): Promise<void> {
 /** {@link openOrFocusWindowsForBackend}; `mayJoin` false never adds the machine to a live frame. */
 async function openOrFocusMachine(backendId: string, mayJoin: boolean): Promise<void> {
   let shown = showInFrame(backendId)?.window ?? null;
-  if (!shown && mayJoin && isMachineRailEnabled()) {
+  // A saved frame holding the machine reopens with its other machines rather
+  // than the machine joining another frame, which would drop the saved one.
+  const parked = takeParkedFrames().some((frame) => frameHolds(frame, backendId));
+  if (!shown && !parked && mayJoin && isMachineRailEnabled()) {
     const recent = mostRecentFrame();
     if (recent && (await addMachineToFrame(recent, backendId)) && !recent.isDestroyed())
       shown = recent;
