@@ -100,7 +100,7 @@
   let step = $state<ProfileKindStep>('pick');
   let kind = $state<ProfileKind>('differentLogin');
   let name = $state('');
-  let backup = $state(false);
+  let backup = $state(true);
   let remoteCompatible = $state(true);
   let folderSuffix = $state(randomSuffix());
   let secret = $state('');
@@ -123,7 +123,7 @@
     step = only ? 'details' : 'pick';
     kind = only ?? 'differentLogin';
     name = '';
-    backup = false;
+    backup = true;
     remoteCompatible = true;
     folderSuffix = randomSuffix();
     secret = '';

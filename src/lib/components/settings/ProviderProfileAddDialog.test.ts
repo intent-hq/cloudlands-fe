@@ -123,7 +123,7 @@ describe('ProviderProfileAddDialog', () => {
     expect({ provider, name, backup }).toEqual({
       provider: 'claude',
       name: 'Work account',
-      backup: false,
+      backup: true,
     });
     expect(preview.endsWith(`-${suffix}`)).toBe(true);
 
@@ -142,6 +142,27 @@ describe('ProviderProfileAddDialog', () => {
     );
     expect(lastOf(providerProfileSetupDismissed.type)).toBeUndefined();
     expect(mocks.notify.success).not.toHaveBeenCalled();
+  });
+
+  it('Different login: turning the backup switch off before saving creates a non-backup profile', async () => {
+    await seed();
+    await openDialog('codex');
+    await fireEvent.click(screen.getByTestId('provider-profile-kind-differentLogin'));
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Personal' } });
+    const backupSwitch = screen.getByRole('switch', {
+      name: m.settings_providerProfiles_backup_label(),
+    });
+    expect(backupSwitch.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(backupSwitch);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfileKinds_createAndSignIn_label() }),
+    );
+    const { providerProfileFolderSetupRequested } = await slice();
+    expect(lastOf(providerProfileFolderSetupRequested.type)!.payload[0]).toMatchObject({
+      provider: 'codex',
+      name: 'Personal',
+      backup: false,
+    });
   });
 
   it('Codex Different login uses device auth on the app sidecar too', async () => {
@@ -258,7 +279,7 @@ describe('ProviderProfileAddDialog', () => {
     expect(request.payload).toMatchObject({
       baseProviderId: 'claude-code',
       name: 'Key',
-      backup: false,
+      backup: true,
     });
     expect(takeStagedProfileEnv(request.payload.envRef)).toEqual([
       { key: 'ANTHROPIC_API_KEY', kind: 'set', value: 'sk-ant-first' },

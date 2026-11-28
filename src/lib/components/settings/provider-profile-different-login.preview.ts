@@ -6,6 +6,7 @@ import {
   claudeEdit,
   codexAddDetails,
   codexEdit,
+  FAKE_EMAIL,
 } from './profile-kinds/profile-kind.preview-fixtures';
 
 /** Different login: add (live folder preview), edit (saved folder) and error states. */
@@ -15,13 +16,26 @@ export const preview = definePreview<ComponentProps<typeof ProviderProfileKindDi
   defaultState: 'claude-add',
   states: {
     'claude-add': { props: { ...claudeAddDetails } },
+    'claude-add-backup-off': { props: { ...claudeAddDetails, backup: false } },
+    'claude-add-folder-open': { props: { ...claudeAddDetails, detailsOpen: true } },
     'codex-add': { props: { ...codexAddDetails } },
     'claude-add-empty-name': { props: { ...claudeAddDetails, name: '' } },
     'claude-add-accented-name': {
       props: { ...claudeAddDetails, name: 'Équipe — produit & design (été 2026)!!' },
     },
-    'claude-edit': { props: { ...claudeEdit } },
-    'codex-edit': { props: { ...codexEdit } },
+    'claude-edit': {
+      props: { ...claudeEdit, signInStatus: 'ready', signInEmail: FAKE_EMAIL },
+    },
+    'claude-edit-backup-on': {
+      props: { ...claudeEdit, backup: true, signInStatus: 'ready', signInEmail: FAKE_EMAIL },
+    },
+    'claude-edit-signed-out': { props: { ...claudeEdit, signInStatus: 'error' } },
+    'claude-edit-checking': { props: { ...claudeEdit, signInStatus: 'checking' } },
+    'claude-edit-unchecked': { props: { ...claudeEdit } },
+    'claude-edit-folder-open': {
+      props: { ...claudeEdit, signInStatus: 'ready', signInEmail: FAKE_EMAIL, detailsOpen: true },
+    },
+    'codex-edit': { props: { ...codexEdit, signInStatus: 'ready' } },
     'claude-edit-hand-made-folder': {
       props: { ...claudeEdit, savedFolderPath: '~/.claude-work' },
     },

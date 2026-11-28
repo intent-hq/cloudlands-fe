@@ -4,7 +4,8 @@
    * overrides. The daemon validates; its field errors land on the named
    * fields. Saving env edits warns that running sessions keep their current
    * settings and names who must restart (never a frontend reconnect).
-   * Every profile also has a "Use as backup provider" flag (missing reads as off).
+   * Every profile also has a "Use as backup provider" flag (missing reads as off;
+   * a new profile starts with it on).
    *
    * With `isDefault`, the same form edits the provider's Default configuration
    * (§5.54 "Default configuration overrides"): an optional name (blank reads
@@ -117,7 +118,7 @@
       rows = rowsFromSaved(savedEnv, newId);
     } else {
       name = profile?.name ?? '';
-      backup = profile?.backup === true;
+      backup = profile ? profile.backup === true : true;
       rows = profile ? rowsFromSaved(profile.env, newId) : [newRow(newId)];
     }
     errors = {};
@@ -282,9 +283,7 @@
   <div class="space-y-5">
     <FormField
       label={m.settings_providerProfiles_name_label()}
-      description={isDefault
-        ? m.settings_providerDefault_name_description()
-        : m.settings_providerProfiles_name_description()}
+      description={isDefault ? m.settings_providerDefault_name_description() : undefined}
       error={errors.name}
       required={!isDefault}
     >
@@ -306,7 +305,7 @@
             {m.settings_providerProfiles_backup_label()}
           </label>
           <p id="provider-profile-backup-description" class="type-caption text-muted-foreground">
-            {m.settings_providerProfiles_backup_description()}
+            {m.settings_providerProfiles_backupQuota_description()}
           </p>
         </div>
         <Switch

@@ -169,9 +169,9 @@ describe('ProviderProfileEditDialog: the matching screen', () => {
 
   it('shows the saved folder read-only; Codex offers only Sign in with ChatGPT', async () => {
     await openEdit(CODEX_FOLDER);
-    const folder = screen.getByTestId('provider-profile-folder-path') as HTMLInputElement;
-    expect(folder.value).toBe('~/intent/profiles/codex/work-k3f9');
-    expect(folder.readOnly).toBe(true);
+    expect(screen.getByTestId('provider-profile-folder-path').textContent?.trim()).toBe(
+      '~/intent/profiles/codex/work-k3f9',
+    );
     const actions = screen.getByTestId('provider-profile-sign-in-actions');
     expect(
       within(actions)
@@ -221,6 +221,20 @@ describe('ProviderProfileEditDialog: saving', () => {
     const action = lastOf(providerProfileUpdateRequested.type)!;
     expect(action.payload).toMatchObject({ profileId: 'p1', name: 'Office', envRef: undefined });
     expect(lastOf(providerProfileSecretEditRequested.type)).toBeUndefined();
+  });
+
+  it.each([
+    ['on', true],
+    ['off', undefined],
+  ] as const)('keeps a saved backup choice (%s) when other fields change', async (_l, backup) => {
+    await openEdit({ ...CLAUDE_FOLDER, ...(backup ? { backup } : {}) });
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe(String(backup === true));
+    await fireEvent.input(nameInput(), { target: { value: 'Office' } });
+    await save();
+    const { providerProfileUpdateRequested } = await slice();
+    const action = lastOf(providerProfileUpdateRequested.type)!;
+    expect(action.payload).toMatchObject({ profileId: 'p1', name: 'Office' });
+    expect(action.payload.backup).toBeUndefined();
   });
 
   it('re-adds missing unsets on save and sends the folder as keep', async () => {
