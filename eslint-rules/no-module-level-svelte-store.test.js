@@ -104,15 +104,19 @@ describe('no-module-level-svelte-store in the repo config', () => {
   });
 
   it('lints its samples without TypeScript type information', async () => {
+    const repoConfig = new ESLint({ cwd: root, cache: false });
     for (const file of [
       'src/main/fixture-dialog-state.ts',
       'src/features/agent/fixture-dialog-state.ts',
+      'src/features/agent/fixture-dialog-state.test.ts',
     ]) {
       const config = await eslint.calculateConfigForFile(path.join(root, file));
       expect(config.languageOptions.parserOptions, file).toMatchObject({
         project: false,
         projectService: false,
       });
+      const unchanged = await repoConfig.calculateConfigForFile(path.join(root, file));
+      expect(config.rules[ruleId], file).toEqual(unchanged.rules[ruleId]);
     }
   });
 
