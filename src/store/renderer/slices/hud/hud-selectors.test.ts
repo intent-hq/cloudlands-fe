@@ -15,6 +15,8 @@ import {
   hudAttentionChanged,
   hudFeedEntryReceived,
   hudQuestionCaptured,
+  HUD_FEED_LIMIT,
+  hudGridFilterSetAsideToggled,
   hudReducer,
   initialState,
   type HudCapturedQuestion,
@@ -26,6 +28,7 @@ import {
   selectHudAttentionItems,
   selectHudAttnCount,
   selectHudFeedItems,
+  selectHudSetAsideCount,
   selectHudSystem,
   selectHudTakeoverView,
   selectHudWorkspaceCards,
@@ -50,6 +53,14 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
+import {
+  homeWorkspacesReducer,
+  hydrateHomeWorkspaceSettings,
+  setHomeWorkspaceAside,
+} from '$features/home/home-workspaces-slice';
+import { readHomePersistence } from '$features/home/home-workspaces-persistence';
+import { selectHomePersistenceScope } from '$features/home/home-workspaces-selectors';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 function makeWorkspace(id: string, overrides: Partial<Workspace> = {}): Workspace {
   return {
@@ -4069,6 +4080,25 @@ describe('dock overview conversation age', () => {
     expect(ids(state, 'older')).toEqual(['old']);
   });
 
+  it('leaves set-aside workspaces out of both lists, even when the HUD shows them', () => {
+    const base = conversations(
+      ['old', 'aside-old', 'older', 'aside-now', 'now'].map((id) => makeWorkspace(id)),
+      {
+        old: now - 3 * day,
+        'aside-old': now - 2 * day - 1,
+        older: now - 2 * day,
+        'aside-now': now - 1,
+        now,
+      },
+    );
+    const hidden = withSetAside(base, ['aside-now', 'aside-old']);
+    // The three-entry minimum counts only workspaces the Dock can show.
+    expect(ids(hidden)).toEqual(['now', 'older', 'old']);
+    expect(ids(hidden, 'older')).toEqual([]);
+    const shown = { ...hidden, hud: hudReducer(hidden.hud, hudGridFilterSetAsideToggled()) };
+    expect(ids(shown)).toEqual(['now', 'older', 'old']);
+  });
+
   it('fills the minimum with confirmed human conversations, never activity or invalid entries', () => {
     const row = (id: string, time: number, automated = false) => ({
       id,
@@ -4136,5 +4166,98 @@ describe('dock overview conversation age', () => {
     );
     expect(ids(state)).toEqual(recent);
     expect(ids(state, 'older')).toEqual(['older']);
+  });
+});
+
+/** Admit a principal and set `ids` aside on Home for that account and backend. */
+function withSetAside(base: StoreState, ids: string[]): StoreState {
+  const admitted = withLegacyPrincipal({ ...base, connections: { windowBackendId: 'local' } });
+  const scope = selectHomePersistenceScope.select(admitted);
+  let home = homeWorkspacesReducer(
+    undefined,
+    hydrateHomeWorkspaceSettings(scope, readHomePersistence(undefined)),
+  );
+  for (const id of ids) home = homeWorkspacesReducer(home, setHomeWorkspaceAside(id, 1));
+  return { ...admitted, homeWorkspaces: home } as StoreState;
+}
+
+describe('set-aside workspaces stay off the HUD by default', () => {
+  // Failure modes: set-aside cards still render or count; counters disagree with the grid;
+  // the toggle cannot bring them back; tab badges for set-aside workspaces disappear.
+  const makeEntry = (id: string, source: string): HudFeedEntry => ({
+    id,
+    ts: '2026-07-30T12:00:00Z',
+    colorClass: 'info',
+    source,
+    kind: 'agent:started',
+    text: '',
+  });
+  function setAsideState(showSetAside: boolean): StoreState {
+    const base = mockState(
+      [
+        makeWorkspace('ws-active', { displayStatus: 'in_progress', activity: 'agent_running' }),
+        makeWorkspace('ws-aside', {
+          displayStatus: 'pr_open',
+          agentSummary: {
+            count: 1,
+            agentIds: ['aside-root'],
+            agents: [{ id: 'aside-root', name: 'Coordinator', status: 'active' }],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [['ws-aside', 'review_required']],
+      [makeEntry('evt-active', 'ws-active'), makeEntry('evt-aside', 'ws-aside')],
+    );
+    const state = withSetAside(base, ['ws-aside']);
+    return showSetAside
+      ? { ...state, hud: hudReducer(state.hud, hudGridFilterSetAsideToggled()) }
+      : state;
+  }
+
+  it('hides set-aside workspaces from the grid, counters and attention panel', () => {
+    const state = setAsideState(false);
+    expect(selectHudWorkspaceCards.select(state).map((card) => card.workspaceId)).toEqual([
+      'ws-active',
+    ]);
+    expect(selectHudWorkspaceStateBars.select(state)).toMatchObject({ prOpen: 0, total: 1 });
+    expect(selectHudAgentStateCounts.select(state).running).toBe(0);
+    expect(selectHudAttentionItems.select(state)).toEqual([]);
+    expect(selectHudAttnCount.select(state)).toBe(0);
+    expect(selectHudFeedItems.select(state).map((item) => item.id)).toEqual(['evt-active']);
+    expect(selectHudSetAsideCount.select(state)).toBe(1);
+  });
+
+  it('shows them again when the set-aside filter is on', () => {
+    const state = setAsideState(true);
+    expect(selectHudWorkspaceCards.select(state).map((card) => card.workspaceId)).toEqual([
+      'ws-active',
+      'ws-aside',
+    ]);
+    expect(selectHudWorkspaceStateBars.select(state)).toMatchObject({ prOpen: 1, total: 2 });
+    expect(selectHudAttentionItems.select(state).map((item) => item.workspaceId)).toEqual([
+      'ws-aside',
+    ]);
+    expect(selectHudAttnCount.select(state)).toBe(1);
+    expect(selectHudFeedItems.select(state)).toHaveLength(2);
+    expect(selectHudSetAsideCount.select(state)).toBe(1);
+  });
+
+  it('keeps visible events in the feed when a busy set-aside workspace floods it', () => {
+    const base = mockState([makeWorkspace('ws-active'), makeWorkspace('ws-aside')]);
+    let hud = hudReducer(base.hud, hudFeedEntryReceived(makeEntry('evt-active', 'ws-active')));
+    for (let i = 0; i < HUD_FEED_LIMIT * 5; i++) {
+      hud = hudReducer(
+        hud,
+        hudFeedEntryReceived(makeEntry(`evt-aside-${i}`, 'ws-aside'), ['ws-aside']),
+      );
+    }
+    const hidden = withSetAside({ ...base, hud }, ['ws-aside']);
+    expect(selectHudFeedItems.select(hidden).map((item) => item.id)).toEqual(['evt-active']);
+    const shown = { ...hidden, hud: hudReducer(hidden.hud, hudGridFilterSetAsideToggled()) };
+    expect(selectHudFeedItems.select(shown)).toHaveLength(HUD_FEED_LIMIT);
+  });
+
+  it('keeps tab statuses for set-aside workspaces', () => {
+    expect(selectWorkspaceTabStatuses.select(setAsideState(false))['ws-aside']).toBeDefined();
   });
 });

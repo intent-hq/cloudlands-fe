@@ -53,16 +53,20 @@ describe('hud-grid-filter', () => {
   it('empty filter passes everything; repo and states AND together', () => {
     expect(applyHudGridFilter(cards, EMPTY_HUD_GRID_FILTER)).toHaveLength(3);
     expect(
-      applyHudGridFilter(cards, { repo: 'intent-hq/intentd', states: [] }).map(
+      applyHudGridFilter(cards, { repo: 'intent-hq/intentd', states: [], showSetAside: false }).map(
         (card) => card.workspaceId,
       ),
     ).toEqual(['ws-1', 'ws-2']);
     expect(
-      applyHudGridFilter(cards, { repo: 'intent-hq/intentd', states: ['pr_open'] }).map(
-        (card) => card.workspaceId,
-      ),
+      applyHudGridFilter(cards, {
+        repo: 'intent-hq/intentd',
+        states: ['pr_open'],
+        showSetAside: false,
+      }).map((card) => card.workspaceId),
     ).toEqual(['ws-2']);
-    expect(applyHudGridFilter(cards, { repo: null, states: ['wait', 'pr_open'] })).toHaveLength(2);
+    expect(
+      applyHudGridFilter(cards, { repo: null, states: ['wait', 'pr_open'], showSetAside: false }),
+    ).toHaveLength(2);
   });
 });
 

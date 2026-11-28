@@ -2037,7 +2037,6 @@
       "selectHudUsageError"
     ],
     "src/store/renderer/slices/hud/hud-slice.ts": [
-      "HUD_FEED_LIMIT",
       "computeBurnRatePerMin",
       "initialState"
     ],

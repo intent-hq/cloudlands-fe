@@ -10,10 +10,12 @@
   import { selectHostRole } from '$store/renderer/slices/principal/principal-selectors';
   import {
     selectHudGridFilter,
+    selectHudSetAsideCount,
     selectHudWorkspaceCards,
   } from '$store/renderer/slices/hud/hud-selectors';
   import {
     hudGridFilterRepoPicked,
+    hudGridFilterSetAsideToggled,
     hudGridFilterStatesCleared,
     hudGridFilterStateToggled,
   } from '$store/renderer/slices/hud/hud-slice';
@@ -24,6 +26,7 @@
 
   const cards$ = selectHudWorkspaceCards();
   const filter$ = selectHudGridFilter();
+  const setAsideCount$ = selectHudSetAsideCount();
   // A guest window (bound to a joined host, multiplayer w4) lists only the
   // workspaces shared with it, so its "all" option is labelled accordingly.
   const hostRole$ = selectHostRole();
@@ -61,6 +64,9 @@
   }
   function clearStates() {
     appStore.dispatch(hudGridFilterStatesCleared());
+  }
+  function toggleSetAside() {
+    appStore.dispatch(hudGridFilterSetAsideToggled());
   }
 </script>
 
@@ -146,6 +152,18 @@
             <span class="hud-header-menu-count">{counts[stateKey] ?? 0}</span>
           </Menu.CheckboxItem>
         {/each}
+        {#if $setAsideCount$ > 0 || $filter$.showSetAside}
+          <Menu.Separator class="hud-header-menu-sep" />
+          <Menu.CheckboxItem
+            class="hud-header-menu-row"
+            checked={$filter$.showSetAside}
+            closeOnSelect={false}
+            onCheckedChange={toggleSetAside}
+          >
+            <span class="hud-header-menu-name">{m.hud_filter_showSetAside_label()}</span>
+            <span class="hud-header-menu-count">{$setAsideCount$}</span>
+          </Menu.CheckboxItem>
+        {/if}
       </Menu.Content>
     </Menu.Root>
   </div>

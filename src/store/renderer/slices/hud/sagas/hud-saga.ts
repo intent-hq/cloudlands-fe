@@ -71,7 +71,11 @@ import {
   setWorkspaceEntity,
 } from '../../workspace/workspace-slice';
 import { hydrateAgentsRequested, setAgents } from '../../workspace-agents/workspace-agents-slice';
-import { selectHudGridFilter, selectHudWorkspaceEntities } from '../hud-selectors';
+import {
+  selectHudGridFilter,
+  selectHudHiddenSetAsideIds,
+  selectHudWorkspaceEntities,
+} from '../hud-selectors';
 import {
   hudActivated,
   dockActivated,
@@ -81,6 +85,7 @@ import {
   hudFeedEntryReceived,
   hudGridFilterHydrated,
   hudGridFilterRepoPicked,
+  hudGridFilterSetAsideToggled,
   hudGridFilterStateToggled,
   hudGridFilterStatesCleared,
   hudQuestionCaptured,
@@ -133,6 +138,7 @@ const HUD_GRID_FILTER_CHANGE_ACTIONS = [
   hudGridFilterRepoPicked,
   hudGridFilterStateToggled,
   hudGridFilterStatesCleared,
+  hudGridFilterSetAsideToggled,
 ];
 
 type HudTransportMessage =
@@ -506,7 +512,10 @@ function* handleEvent(runtime: HudRuntime, event: WorkspaceEvent): SagaGenerator
   }
 
   const entry = mapEventToFeedEntry(event);
-  if (entry) yield* put(hudFeedEntryReceived(withFirstStartRewrite(runtime, entry)));
+  if (entry) {
+    const hidden = yield* selectHudHiddenSetAsideIds.effect();
+    yield* put(hudFeedEntryReceived(withFirstStartRewrite(runtime, entry), [...hidden]));
+  }
 
   const agentId = typeof data.agentId === 'string' ? data.agentId : undefined;
   if (
@@ -543,7 +552,11 @@ export function sanitizePersistedHudGridFilter(value: unknown): HudGridFilter {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return EMPTY_HUD_GRID_FILTER;
   }
-  const { repo, states } = value as { repo?: unknown; states?: unknown };
+  const { repo, states, showSetAside } = value as {
+    repo?: unknown;
+    states?: unknown;
+    showSetAside?: unknown;
+  };
   if ((repo !== null && typeof repo !== 'string') || !Array.isArray(states)) {
     return EMPTY_HUD_GRID_FILTER;
   }
@@ -553,6 +566,7 @@ export function sanitizePersistedHudGridFilter(value: unknown): HudGridFilter {
   return {
     repo: typeof repo === 'string' && repo.length > 0 ? repo : null,
     states: [...new Set(known)],
+    showSetAside: showSetAside === true,
   };
 }
 

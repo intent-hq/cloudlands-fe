@@ -20,6 +20,16 @@ import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/tok
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import {
+  hydrateHomeWorkspaceSettings,
+  setHomeWorkspaceAside,
+} from '$features/home/home-workspaces-slice';
+import { readHomePersistence } from '$features/home/home-workspaces-persistence';
+import { selectHomePersistenceScope } from '$features/home/home-workspaces-selectors';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import { m } from '$shared/paraglide/messages.js';
 import HudWorkspaceGrid from './HudWorkspaceGrid.svelte';
 import { CARD_VISIBILITY_ROOT_MARGIN } from './hud-card-visibility';
 
@@ -193,5 +203,38 @@ describe('HudWorkspaceGrid per-workspace read gating', () => {
 
     expect(readsOf(TASKS_READ)).toEqual([]);
     expect(readsOf(TOKENS_READ)).toEqual(['ws-2']);
+  });
+});
+
+describe('HudWorkspaceGrid with every workspace set aside', () => {
+  // Failure modes: the grid says "No workspaces" with no way back; the button shows while
+  // the filter already shows set-aside workspaces; the button does not reveal them.
+  function setAllAside(): void {
+    const { connections } = appStore.state;
+    appStore.dispatch(
+      connectionsListReceived({
+        connections: getItems(connections.connections),
+        activeId: 'local',
+        windowBackendId: 'local',
+      }),
+    );
+    admitLegacyPrincipal();
+    const scope = selectHomePersistenceScope.select(appStore.state);
+    expect(scope).not.toBeNull();
+    appStore.dispatch(hydrateHomeWorkspaceSettings(scope, readHomePersistence(undefined)));
+    for (const id of ['ws-1', 'ws-2', 'ws-3']) appStore.dispatch(setHomeWorkspaceAside(id, 1));
+  }
+
+  it('offers to show the set-aside workspaces, and shows them when chosen', async () => {
+    setAllAside();
+    const view = render(HudWorkspaceGrid);
+    flushSync();
+    expect(view.queryAllByTestId('hud-ws-grid-slot')).toHaveLength(0);
+    const show = view.getByRole('button', { name: m.hud_grid_showSetAside_action({ count: 3 }) });
+    show.click();
+    expect(await view.findAllByTestId('hud-ws-grid-slot')).toHaveLength(3);
+    expect(
+      view.queryByRole('button', { name: m.hud_grid_showSetAside_action({ count: 3 }) }),
+    ).toBeNull();
   });
 });
